@@ -8,8 +8,8 @@ class DummyController extends Controller
 {
     public function index()
     {
-        $pesan = "Halo, ini versi dari Wijdan";
+        $text = "Haii, ini aku";
 
-        return $pesan;
+        return $text;
     }
 }
