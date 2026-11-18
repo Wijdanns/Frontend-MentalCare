@@ -8,7 +8,7 @@ class DummyController extends Controller
 {
     public function index()
     {
-        $pesan = "Halo, ini versi dummy dari controller.";
+        $pesan = "Halo, ini versi dari Wijdan";
 
         return $pesan;
     }
