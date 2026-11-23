@@ -2,10 +2,6 @@
 
 @section('title', 'Beranda | MentalCare')
 
-@php
-    $psikologs = $psikologs ?? collect();
-@endphp
-
 @section('content')
 
 {{-- ============ HERO ============ --}}
@@ -93,14 +89,27 @@
         </a>
     </div>
 
-    <div class="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-        @forelse ($psikologs->take(3) as $psikolog)
-            <x-card-psikolog :psikolog="$psikolog" />
-        @empty
-            <p class="col-span-full rounded-2xl border border-dashed border-blush-200 bg-white p-10 text-center text-gray-500">
-                Belum ada psikolog yang ditampilkan.
-            </p>
-        @endforelse
+    {{-- Data dari API: GET /api/psikolog (3 pertama) --}}
+    <div x-data="psikologPilihan" class="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+        <template x-if="memuat">
+            <div class="col-span-full grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+                <div class="h-80 animate-pulse rounded-3xl bg-blush-100"></div>
+                <div class="h-80 animate-pulse rounded-3xl bg-blush-100"></div>
+                <div class="h-80 animate-pulse rounded-3xl bg-blush-100"></div>
+            </div>
+        </template>
+
+        <template x-for="p in daftar" :key="p.id">
+            <x-card-psikolog-api />
+        </template>
+
+        <p x-show="galat" x-cloak x-text="galat"
+           class="col-span-full rounded-2xl border border-red-200 bg-red-50 p-6 text-center text-sm text-red-700"></p>
+
+        <p x-show="!memuat && !galat && daftar.length === 0" x-cloak
+           class="col-span-full rounded-2xl border border-dashed border-blush-200 bg-white p-10 text-center text-gray-500">
+            Belum ada psikolog yang ditampilkan.
+        </p>
     </div>
 </section>
 
