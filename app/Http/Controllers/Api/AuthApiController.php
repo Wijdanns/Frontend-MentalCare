@@ -92,6 +92,7 @@ class AuthApiController extends Controller
         return response()->json([
             'status'  => 'success',
             'message' => 'Sesi diakhiri. Sampai jumpa lagi, semoga harimu menyenangkan!',
+            'data'    => null,
         ], 200);
     }
 }
