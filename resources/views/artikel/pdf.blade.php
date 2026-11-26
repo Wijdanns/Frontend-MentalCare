@@ -1,17 +1,18 @@
 @php
+    $judul        = data_get($artikel, 'judul', 'Artikel');$tglPublikasi = data_get($artikel, 'tanggal_publikasi');$thumbnail    = $thumbnail ?? data_get($artikel, 'thumbnail');
 
     $meta = [
-        'Kategori'       => $artikel->kategori->nama_kategori ?? '-',
-        'Tanggal terbit' => $artikel->tanggal_publikasi->translatedFormat('d F Y'),
-        'Penulis'        => $artikel->user->nama ?? '-',
-        'Waktu baca'     => $artikel->waktu_baca . ' menit',
+        'Kategori'       => data_get($artikel, 'kategori.nama_kategori', '-'),
+        'Tanggal terbit' => $tglPublikasi ? \Illuminate\Support\Carbon::parse($tglPublikasi)->translatedFormat('d F Y') : '-',
+        'Penulis'        => data_get($artikel, 'user.nama', '-'),
+        'Waktu baca'     => data_get($artikel, 'waktu_baca', 1) . ' menit',
     ];
 @endphp
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>{{ $artikel->judul }}</title>
+    <title>{{ $judul }}</title>
     <style>
         @page { margin: 2cm 2cm 2.4cm 2cm; }
 
@@ -45,10 +46,10 @@
 <body>
 
     <p class="merek">MENTALCARE</p>
-    <h1>{{ $artikel->judul }}</h1>
+    <h1>{{ $judul }}</h1>
 
     <table class="info">
-        @foreach ($meta as $label => $nilai)
+        @foreach ($meta as $label =>$nilai)
             <tr>
                 <th>{{ $label }}</th>
                 <td>{{ $nilai }}</td>
@@ -62,7 +63,7 @@
 
     {{-- Isi artikel berupa HTML dari rich editor (hanya ditulis admin) --}}
     <div class="isi">
-        {!! $artikel->isi !!}
+        {!! data_get($artikel, 'isi', '') !!}
     </div>
 
     <p class="catatan">
