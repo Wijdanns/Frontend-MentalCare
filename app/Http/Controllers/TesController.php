@@ -2,141 +2,151 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\HasilTes;
-use App\Models\TesPsikologis;
+use App\Services\ApiService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class TesController extends Controller
 {
-    /**
-     * Daftar tes yang bisa dikerjakan untuk web.
-     */
     public function index(): View
     {
-        $daftarTes = TesPsikologis::query()
-            ->withCount('pertanyaan')
-            ->has('pertanyaan')
-            ->orderBy('nama_tes')
-            ->get();
+        $res = ApiService::get('/tes-psikologi');
+        abort_unless($res->ok, $res->status);
+
+        $daftarTes = collect(data_get($res->data, 'data') ?? $res->data ?? []);
 
         return view('pasien.tes.index', compact('daftarTes'));
     }
 
-    /**
-     * Halaman pengerjaan tes untuk web.
-     */
-    public function show(TesPsikologis $tes): View|RedirectResponse
+    public function show(int $id): View|RedirectResponse
     {
-        $tes->load([
-            'pertanyaan' => fn ($q) => $q->orderBy('id'),
-            'pertanyaan.jawabanPsikologis' => fn ($q) => $q
-                ->select('id', 'id_pertanyaan', 'jawaban')
-                ->orderBy('id'),
-        ]);
+        if (! session()->has('api_token')) {
+            session(['url.intended' => route('tes.show', $id)]);
 
-        if ($tes->pertanyaan->isEmpty()) {
-            return redirect()
-                ->route('tes.index')
-                ->with('error', 'Tes ini belum memiliki pertanyaan.');
+            return redirect()->route('login')->with('error', 'Silakan masuk untuk mengerjakan tes psikologi.');
         }
+
+        $res = ApiService::get("/tes-psikologi/{$id}");
+
+        if ($res->status === 401) {
+            return redirect()->route('login')->with('error', 'Sesi login telah berakhir, silakan masuk kembali.');
+        }
+
+        if ($res->status === 403) {
+            return redirect()->route('tes.index')->with('error', 'Fitur tes psikologi hanya tersedia untuk akun pasien.');
+        }
+
+        abort_unless($res->ok, $res->status);
+
+        $tes = data_get($res->data, 'tes') ?? $res->data;
 
         return view('pasien.tes.show', compact('tes'));
     }
 
-    /**
-     * Simpan jawaban tes, hitung total poin, lalu arahkan ke halaman hasil web.
-     */
-    public function submit(Request $request, TesPsikologis $tes): RedirectResponse
+    public function submit(Request $request, int $id): RedirectResponse
     {
-        $request->validate([
-            'jawaban' => ['required', 'array'],
-        ], [
-            'jawaban.required' => 'Jawab semua pertanyaan terlebih dahulu.',
-        ]);
-
-        $pertanyaan = $tes->pertanyaan()
-            ->with('jawabanPsikologis')
-            ->orderBy('id')
-            ->get();
-
-        abort_if($pertanyaan->isEmpty(), 404);
-
-        $pilihan = $request->input('jawaban', []);
-        $rows = [];
-        $total = 0;
-
-        foreach ($pertanyaan as $i => $p) {
-            $jawaban = $p->jawabanPsikologis->firstWhere('id', (int) ($pilihan[$p->id] ?? 0));
-
-            if (! $jawaban) {
-                throw ValidationException::withMessages([
-                    'jawaban' => 'Pertanyaan nomor ' . ($i + 1) . ' belum dijawab.',
-                ]);
-            }
-
-            $rows[] = [
-                'id_pertanyaan' => $p->id,
-                'id_jawaban' => $jawaban->id,
-                'poin' => $jawaban->poin,
-            ];
-            $total += $jawaban->poin;
+        if (! session()->has('api_token')) {
+            return redirect()->route('login')->with('error', 'Silakan masuk terlebih dahulu.');
         }
 
-        $hasil = DB::transaction(function () use ($tes, $rows, $total) {
-            $hasil = HasilTes::create([
-                'id_user' => Auth::id(),
-                'id_tes' => $tes->id,
-                'total_poin' => $total,
-            ]);
-
-            $hasil->jawabanUser()->createMany($rows);
-
-            return $hasil;
-        });
-
-        toast('Selesai! Terima kasih sudah melangkah maju untuk mengenal dirimu lebih baik.', 'success');
-
-        return redirect()->route('tes.hasil', $hasil);
-    }
-
-    /**
-     * Halaman hasil tes untuk web.
-     */
-    public function hasil(HasilTes $hasil): View
-    {
-        abort_unless((int) $hasil->id_user === (int) Auth::id(), 403);
-
-        $hasil->load([
-            'tesPsikologis',
-            'jawabanUser.pertanyaanPsikologis',
-            'jawabanUser.jawabanPsikologis',
+        $res = ApiService::post("/tes-psikologi/{$id}/submit", [
+            'jawaban' => $request->input('jawaban', []),
         ]);
 
-        $poinMaks = $hasil->tesPsikologis
-            ->pertanyaan()
-            ->with('jawabanPsikologis')
-            ->get()
-            ->sum(fn ($p) => (int) $p->jawabanPsikologis->max('poin'));
+        if (! $res->ok) {
+            return back()
+                ->withErrors(ApiService::errors($res))
+                ->with('error', $res->message ?: 'Gagal mengirim jawaban tes.')
+                ->withInput();
+        }
 
-        return view('pasien.tes.hasil', compact('hasil', 'poinMaks'));
+        $hasilId = data_get($res->data, 'id') ?? data_get($res->data, 'hasil.id');
+
+        return redirect()->route('tes.hasil', $hasilId);
     }
 
-    /**
-     * Riwayat tes pasien untuk web.
-     */
-    public function riwayat(): View
+    public function riwayat(Request $request): View|RedirectResponse
     {
-        $riwayat = HasilTes::query()
-            ->with('tesPsikologis')
-            ->where('id_user', Auth::id())
-            ->latest()
-            ->paginate(10);
+        if (! session()->has('api_token')) {
+            session(['url.intended' => route('tes.riwayat')]);
+
+            return redirect()->route('login')->with('error', 'Silakan masuk untuk melihat riwayat tes.');
+        }
+
+        $res = ApiService::get('/tes-psikologi/riwayat', array_filter([
+            'page' => $request->query('page'),
+        ]));
+
+        if ($res->status === 401) {
+            return redirect()->route('login')->with('error', 'Sesi login telah berakhir, silakan masuk kembali.');
+        }
+
+        if ($res->status === 403) {
+            return redirect()->route('tes.index')->with('error', 'Riwayat tes hanya tersedia untuk akun pasien.');
+        }
+
+        abort_unless($res->ok, $res->status);
+
+        $riwayat = isset($res->data->data)
+            ? ApiService::paginator($res->data)
+            : collect($res->data ?? []);
 
         return view('pasien.tes.riwayat', compact('riwayat'));
+    }
+
+    public function hasil(int $id): View|RedirectResponse
+    {
+        if (! session()->has('api_token')) {
+            session(['url.intended' => route('tes.hasil', $id)]);
+
+            return redirect()->route('login')->with('error', 'Silakan masuk untuk melihat hasil tes.');
+        }
+
+        $res = ApiService::get("/tes-psikologi/hasil/{$id}");
+
+        if ($res->status === 401) {
+            return redirect()->route('login')->with('error', 'Sesi login telah berakhir, silakan masuk kembali.');
+        }
+
+        if ($res->status === 403) {
+            return redirect()->route('tes.index')->with('error', 'Hasil tes hanya tersedia untuk akun pasien.');
+        }
+
+        abort_unless($res->ok, $res->status);
+
+        // Cek berbagai kemungkinan key pembungkus dari API
+        $hasil = data_get($res->data, 'hasil')
+            ?? data_get($res->data, 'riwayat')
+            ?? data_get($res->data, 'hasil_tes')
+            ?? data_get($res->data, 'riwayat_tes')
+            ?? data_get($res->data, 'result');
+
+        // Jika masih null, cari properti bertipe object di dalam $res->data yang menyimpan detail hasil
+        if (! $hasil && is_object($res->data)) {
+            foreach (get_object_vars($res->data) as $val) {
+                if (is_object($val) && (isset($val->total_poin) || isset($val->created_at) || isset($val->id))) {
+                    $hasil = $val;
+                    break;
+                }
+            }
+        }
+
+        $hasil    = $hasil ?? $res->data;
+        $poinMaks = (int) (data_get($res->data, 'poin_maks') ?? data_get($hasil, 'poin_maks', 0));
+
+        if ($poinMaks === 0) {
+            $pertanyaanList = collect(
+                data_get($hasil, 'tesPsikologis.pertanyaan')
+                ?? data_get($hasil, 'tes_psikologis.pertanyaan', [])
+            );
+
+            $poinMaks = $pertanyaanList->sum(function ($p) {
+                $opsi = collect(data_get($p, 'jawabanPsikologis') ?? data_get($p, 'jawaban_psikologis', []));
+                return (int) $opsi->max('poin');
+            });
+        }
+
+        return view('pasien.tes.hasil', compact('hasil', 'poinMaks'));
     }
 }
