@@ -2,6 +2,10 @@
 
 @section('title', 'Beranda | MentalCare')
 
+@php
+    $psikologs = collect($psikologs ?? []);
+@endphp
+
 @section('content')
 
 {{-- ============ HERO ============ --}}
@@ -21,7 +25,7 @@
         </p>
 
         <div class="mt-8 flex flex-wrap gap-3">
-            <a href="{{ url('/konsultasi') }}" class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3.5 font-semibold text-white shadow-lg shadow-primary/30 transition hover:bg-primary-dark sm:w-auto">
+            <a href="{{ route('konsultasi.index') }}" class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3.5 font-semibold text-white shadow-lg shadow-primary/30 transition hover:bg-primary-dark sm:w-auto">
                 Mulai konsultasi
                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
             </a>
@@ -32,7 +36,7 @@
     </div>
 
     <div class="rounded-[32px] bg-blush-200/80 p-3 shadow-2xl shadow-primary/10">
-        {{-- Placeholder tanpa gambar. Kalau nanti ada foto
+        {{-- Placeholder tanpa gambar. Kalau nanti ada foto:
         <img src="{{ asset('images/hero.jpg') }}" alt="Seseorang duduk tenang menghadap pemandangan"
              class="aspect-[473/496] w-full rounded-[22px] object-cover">
         --}}
@@ -53,7 +57,7 @@
 
         <div class="mt-10 grid gap-5 sm:mt-14 md:grid-cols-3">
             <x-card-layanan judul="Konsultasi Online"
-                            deskripsi="Bercerita melalui chat atau video call dengan psikolog pilihanmu." :href="url('/konsultasi')">
+                            deskripsi="Bercerita melalui chat atau video call dengan psikolog pilihanmu." :href="route('konsultasi.index')">
                 <x-slot name="icon">
                     <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/><path d="M8 8h8M8 12h5"/></svg>
                 </x-slot>
@@ -67,7 +71,7 @@
             </x-card-layanan>
 
             <x-card-layanan judul="Tes Psikologi"
-                            deskripsi="Kenali kondisi emosionalmu melalui tes awal yang mudah dipahami." :href="url('/tes-psikologi')">
+                            deskripsi="Kenali kondisi emosionalmu melalui tes awal yang mudah dipahami." :href="route('tes.index')">
                 <x-slot name="icon">
                     <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M12 5c-2.5 0-4.5 1.6-4.5 3.7 0 .6.1 1 .3 1.5-1.3.5-2.3 1.8-2.3 3.3 0 1.5 1 2.7 2.3 3.2.4 1.3 1.8 2.3 4.2 2.3"/><path d="M12 5c2.5 0 4.5 1.6 4.5 3.7 0 .6-.1 1-.3 1.5 1.3.5 2.3 1.8 2.3 3.3 0 1.5-1 2.7-2.3 3.2-.4 1.3-1.8 2.3-4.2 2.3"/></svg>
                 </x-slot>
@@ -89,27 +93,14 @@
         </a>
     </div>
 
-    {{-- Data dari API: GET /api/psikolog (3 pertama) --}}
-    <div x-data="psikologPilihan" class="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-        <template x-if="memuat">
-            <div class="col-span-full grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-                <div class="h-80 animate-pulse rounded-3xl bg-blush-100"></div>
-                <div class="h-80 animate-pulse rounded-3xl bg-blush-100"></div>
-                <div class="h-80 animate-pulse rounded-3xl bg-blush-100"></div>
-            </div>
-        </template>
-
-        <template x-for="p in daftar" :key="p.id">
-            <x-card-psikolog-api />
-        </template>
-
-        <p x-show="galat" x-cloak x-text="galat"
-           class="col-span-full rounded-2xl border border-red-200 bg-red-50 p-6 text-center text-sm text-red-700"></p>
-
-        <p x-show="!memuat && !galat && daftar.length === 0" x-cloak
-           class="col-span-full rounded-2xl border border-dashed border-blush-200 bg-white p-10 text-center text-gray-500">
-            Belum ada psikolog yang ditampilkan.
-        </p>
+    <div class="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+        @forelse ($psikologs->take(3) as $psikolog)
+            <x-card-psikolog :psikolog="$psikolog" />
+        @empty
+            <p class="col-span-full rounded-2xl border border-dashed border-blush-200 bg-white p-10 text-center text-gray-500">
+                Belum ada psikolog yang ditampilkan.
+            </p>
+        @endforelse
     </div>
 </section>
 
