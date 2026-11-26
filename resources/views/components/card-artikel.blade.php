@@ -3,27 +3,33 @@
 @php
     $warnaSampul = ['bg-blush-200', 'bg-[#F4EBDD]', 'bg-[#E7E5F2]', 'bg-[#E3EEF3]'][$index % 4];
 
-    $link = url('/artikel/' . $artikel->getKey());
+    $artikelId = data_get($artikel, 'id');
+    $link      = $artikelId ? route('artikel.show', $artikelId) : '#';
 
-    $thumbnail = !empty($artikel->thumbnail)
-        ? (\Illuminate\Support\Str::startsWith($artikel->thumbnail, ['http://', 'https://'])
-            ? $artikel->thumbnail
-            : asset('storage/' . $artikel->thumbnail))
+    $thumbnailPath = data_get($artikel, 'thumbnail');
+    $thumbnail     = !empty($thumbnailPath)
+        ? (\Illuminate\Support\Str::startsWith($thumbnailPath, ['http://', 'https://'])
+            ? $thumbnailPath
+            : \App\Services\ApiService::backendUrl() . '/storage/' . ltrim($thumbnailPath, '/'))
         : null;
 
-    $tanggal = $artikel->tanggal_publikasi ?? null;
+    $judul        = data_get($artikel, 'judul', 'Artikel');
+    $namaKategori = data_get($artikel, 'kategori.nama_kategori') ?? data_get($artikel, 'nama_kategori', '');
+
+    $tanggal     = data_get($artikel, 'tanggal_publikasi') ?? data_get($artikel, 'created_at');
     $tanggalTeks = $tanggal
         ? \Illuminate\Support\Carbon::parse($tanggal)->locale('id')->translatedFormat('j F Y')
         : '';
 
-    $ringkasan = $artikel->ringkasan
-        ?? \Illuminate\Support\Str::limit(strip_tags($artikel->isi ?? ''), 140);
+    $isi       = data_get($artikel, 'isi') ?? data_get($artikel, 'konten', '');
+    $ringkasan = data_get($artikel, 'ringkasan')
+        ?: \Illuminate\Support\Str::limit(strip_tags($isi), 140);
 @endphp
 
 <article class="flex h-full flex-col overflow-hidden rounded-3xl border border-blush-200 bg-white">
     <a href="{{ $link }}" class="block" tabindex="-1" aria-hidden="true">
         @if ($thumbnail)
-            <img src="{{ $thumbnail }}" alt="Sampul {{ $artikel->judul }}"
+            <img src="{{ $thumbnail }}" alt="Sampul {{ $judul }}"
                  class="aspect-[2/1] w-full object-cover" loading="lazy">
         @else
             <div class="flex aspect-[2/1] w-full items-center justify-center {{ $warnaSampul }}">
@@ -36,12 +42,12 @@
 
     <div class="flex flex-1 flex-col px-5 pb-5 pt-5 sm:px-6 sm:pb-6">
         <div class="flex items-center justify-between gap-3 text-xs">
-            <span class="font-bold uppercase tracking-wider text-primary">{{ $artikel->kategori->nama_kategori ?? '' }}</span>
+            <span class="font-bold uppercase tracking-wider text-primary">{{ $namaKategori }}</span>
             <span class="shrink-0 text-gray-400">{{ $tanggalTeks }}</span>
         </div>
 
         <h3 class="mt-3 text-lg font-bold leading-snug">
-            <a href="{{ $link }}" class="transition hover:text-primary">{{ $artikel->judul }}</a>
+            <a href="{{ $link }}" class="transition hover:text-primary">{{ $judul }}</a>
         </h3>
 
         <p class="mt-3 line-clamp-3 text-sm leading-7 text-gray-500">{{ $ringkasan }}</p>

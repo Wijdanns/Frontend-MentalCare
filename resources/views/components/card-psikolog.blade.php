@@ -1,38 +1,56 @@
 @props(['psikolog'])
 
 @php
-    $inisial = \Illuminate\Support\Str::of($psikolog->nama)
+    $id           = data_get($psikolog, 'id');
+    $nama         = data_get($psikolog, 'nama', 'Psikolog');
+    $email        = data_get($psikolog, 'email', '');
+    $spesialisasi = data_get($psikolog, 'spesialis', '');
+    $deskripsi    = data_get($psikolog, 'deskripsi_psikolog') ?: data_get($psikolog, 'deskripsi', '');
+    $fotoProfil   = data_get($psikolog, 'foto_profil') ?: data_get($psikolog, 'foto');
+    $tersedia     = (bool) data_get($psikolog, 'tersedia', false);
+
+    $tarif = (int) (
+        data_get($psikolog, 'tarif')
+        ?: data_get($psikolog, 'biaya')
+        ?: data_get($psikolog, 'biaya_konsultasi')
+        ?: data_get($psikolog, 'tarif_konsultasi')
+        ?: data_get($psikolog, 'harga')
+        ?: 0
+    );
+
+    $inisial = \Illuminate\Support\Str::of($nama)
         ->replace(['Dr.', 'M.Psi.', ','], '')
         ->explode(' ')->filter()
         ->map(fn ($kata) => \Illuminate\Support\Str::upper(\Illuminate\Support\Str::substr($kata, 0, 1)))
-        ->take(2)->implode('');
+        ->take(2)->implode('') ?: 'PS';
 
-    $fotoUrl = $psikolog->foto_profil
-        ? route('foto-psikolog', basename($psikolog->foto_profil))
-        : '';
-
-    $tersedia = (bool) ($psikolog->tersedia ?? false);
+    $fotoUrl = '';
+    if ($fotoProfil) {
+        $fotoUrl = \Illuminate\Support\Str::startsWith($fotoProfil, ['http://', 'https://'])
+            ? $fotoProfil
+            : route('foto-psikolog', basename($fotoProfil));
+    }
 
     // Tombol "Pilih jadwal" menuju halaman konsultasi dengan psikolog terpilih
-    $linkJadwal = url('/konsultasi') . (isset($psikolog->id) ? '?psikolog=' . $psikolog->id : '');
+    $linkJadwal = route('konsultasi.index', array_filter(['psikolog' => $id]));
 
     // Data yang dikirim ke pop-up profil
     $profil = [
-        'nama' => $psikolog->nama,
-        'email' => $psikolog->email ?? '',
-        'spesialisasi' => $psikolog->spesialisasi ?? '',
-        'tarif' => 'Rp' . number_format($psikolog->tarif ?? 0, 0, ',', '.'),
-        'deskripsi' => $psikolog->deskripsi_psikolog ?? '',
-        'foto' => $fotoUrl,
-        'inisial' => $inisial,
-        'tersedia' => $tersedia,
-        'link_jadwal' => $linkJadwal,
+        'nama'         => $nama,
+        'email'        => $email,
+        'spesialisasi' => $spesialisasi,
+        'tarif'        => 'Rp ' . number_format($tarif, 0, ',', '.'),
+        'deskripsi'    => $deskripsi,
+        'foto'         => $fotoUrl,
+        'inisial'      => $inisial,
+        'tersedia'     => $tersedia,
+        'link_jadwal'  => $linkJadwal,
     ];
 @endphp
 
 <article x-data class="flex h-full flex-col overflow-hidden rounded-3xl border border-blush-200 bg-white">
     @if ($fotoUrl)
-        <img src="{{ $fotoUrl }}" alt="Foto {{ $psikolog->nama }}"
+        <img src="{{ $fotoUrl }}" alt="Foto {{ $nama }}"
              class="aspect-[353/256] w-full object-cover" loading="lazy">
     @else
         <div class="flex aspect-[353/256] w-full items-center justify-center bg-gradient-to-br from-blush-100 to-blush-200">
@@ -51,12 +69,12 @@
             </span>
         @endif
 
-        <h3 class="mt-3 text-lg font-bold">{{ $psikolog->nama }}</h3>
-        <p class="mt-1 text-sm text-gray-500">{{ $psikolog->spesialisasi }}</p>
+        <h3 class="mt-3 text-lg font-bold">{{ $nama }}</h3>
+        <p class="mt-1 text-sm text-gray-500">{{ $spesialisasi }}</p>
 
         <div class="mt-auto">
             <div class="mt-6 flex items-center justify-between gap-3 border-t border-gray-100 pt-4 text-sm">
-                <span class="font-bold text-primary">Rp{{ number_format($psikolog->tarif, 0, ',', '.') }}</span>
+                <span class="font-bold text-primary">Rp {{ number_format($tarif, 0, ',', '.') }}</span>
             </div>
 
             <div class="mt-4 grid grid-cols-2 gap-3 text-sm font-semibold">
