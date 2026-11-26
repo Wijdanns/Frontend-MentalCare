@@ -2,39 +2,23 @@
 
 use App\Http\Controllers\ArtikelController;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\BerkasController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\KonsultasiController;
-use App\Http\Controllers\PembayaranController;
 use App\Http\Controllers\ProfilController;
 use App\Http\Controllers\PsikologController;
 use App\Http\Controllers\TesController;
-use App\Http\Middleware\EnsureRole;
+use App\Http\Middleware\CekToken;
 use Illuminate\Support\Facades\Route;
-
-/*
-|--------------------------------------------------------------------------
-| Route Web MentalCare
-|--------------------------------------------------------------------------
-| 1. Publik            : bisa diakses siapa saja
-| 2. Auth              : login / register / logout
-| 3. Berkas            : foto & bukti pembayaran
-| 4. Area pasien       : wajib login sebagai pasien
-| 5. Area admin        : wajib login sebagai admin
-|
-| Panel admin (/admin) dan panel psikolog (/panel-psikolog) dikelola Filament.
-| Jadwal pembatalan otomatis ada di routes/console.php.
-*/
 
 // ======================= 1. PUBLIK =======================
 Route::get('/', [HomeController::class, 'index'])->name('home');
 
 Route::get('/psikolog', [PsikologController::class, 'index'])->name('psikolog.index');
-Route::get('/psikolog/{psikolog}', [PsikologController::class, 'show'])->name('psikolog.show');
+Route::get('/psikolog/{id}', [PsikologController::class, 'show'])->whereNumber('id')->name('psikolog.show');
 
 Route::get('/artikel', [ArtikelController::class, 'index'])->name('artikel.index');
-Route::get('/artikel/{artikel}', [ArtikelController::class, 'show'])->name('artikel.show');
-Route::get('/artikel/{artikel}/unduh', [ArtikelController::class, 'unduh'])->name('artikel.unduh');
+Route::get('/artikel/{id}', [ArtikelController::class, 'show'])->whereNumber('id')->name('artikel.show');
+Route::get('/artikel/{id}/unduh', [ArtikelController::class, 'unduh'])->whereNumber('id')->name('artikel.unduh');
 
 Route::get('/tes-psikologi', [TesController::class, 'index'])->name('tes.index');
 
@@ -52,43 +36,30 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
 Route::post('/register', [AuthController::class, 'register']);
 
-Route::post('/logout', [AuthController::class, 'logout'])->name('logout')->middleware('auth');
+Route::post('/logout', [AuthController::class, 'logout'])
+    ->middleware(CekToken::class)
+    ->name('logout');
 
-// ======================= 3. BERKAS =======================
-// Foto publik (dilayani langsung dari storage/app/public, tanpa storage:link)
-Route::get('/foto/psikolog/{file}', [BerkasController::class, 'fotoPsikolog'])->name('foto-psikolog');
-Route::get('/foto/artikel/{file}', [BerkasController::class, 'fotoArtikel'])->name('foto-artikel');
+// ======================= 3. AREA PASIEN =======================
+Route::middleware(CekToken::class . ':pasien')->group(function () {
 
-// Bukti pembayaran: hanya admin atau pasien pemilik konsultasi
-Route::get('/bukti-pembayaran/{file}', [BerkasController::class, 'buktiPembayaran'])
-    ->middleware('auth')
-    ->name('bukti-pembayaran');
-
-// ======================= 4. AREA PASIEN =======================
-Route::middleware(['auth', EnsureRole::class . ':pasien'])->group(function () {
-
-    // Tes psikologi (urutan penting: /riwayat & /hasil sebelum /{tes})
+    // Tes psikologi (urutan penting: /riwayat & /hasil sebelum /{id})
     Route::prefix('tes-psikologi')->name('tes.')->group(function () {
         Route::get('/riwayat', [TesController::class, 'riwayat'])->name('riwayat');
-        Route::get('/hasil/{hasil}', [TesController::class, 'hasil'])->name('hasil');
-        Route::get('/{tes}', [TesController::class, 'show'])->name('show');
-        Route::post('/{tes}', [TesController::class, 'submit'])->name('submit');
+        Route::get('/hasil/{id}', [TesController::class, 'hasil'])->whereNumber('id')->name('hasil');
+        Route::get('/{id}', [TesController::class, 'show'])->whereNumber('id')->name('show');
+        Route::post('/{id}', [TesController::class, 'submit'])->whereNumber('id')->name('submit');
     });
 
-    // Akun / profil saya
+    // Profil
     Route::get('/profil', [ProfilController::class, 'index'])->name('profil.index');
     Route::put('/profil', [ProfilController::class, 'update'])->name('profil.update');
 
     // Konsultasi
     Route::get('/konsultasi/riwayat', [KonsultasiController::class, 'riwayat'])->name('konsultasi.riwayat');
     Route::post('/konsultasi', [KonsultasiController::class, 'store'])->name('konsultasi.store');
-    Route::get('/konsultasi/konfirmasi/{konsultasi}', [KonsultasiController::class, 'konfirmasi'])->name('konsultasi.konfirmasi');
-    Route::post('/konsultasi/{konsultasi}/bayar', [KonsultasiController::class, 'bayar'])->name('konsultasi.bayar');
-    Route::post('/konsultasi/{konsultasi}/pembayaran/konfirmasi', [PembayaranController::class, 'konfirmasi'])->name('pembayaran.konfirmasi');
-});
-
-// ======================= 5. AREA ADMIN =======================
-// Dipakai tombol "Export" di panel Filament (sesi login yang sama).
-Route::middleware(['auth', EnsureRole::class . ':admin'])->group(function () {
-    Route::get('/konsultasi/export', [KonsultasiController::class, 'exportExcel'])->name('konsultasi.export');
+    Route::get('/konsultasi/konfirmasi/{id}', [KonsultasiController::class, 'konfirmasi'])->whereNumber('id')->name('konsultasi.konfirmasi');
+    Route::post('/konsultasi/{id}/bayar', [KonsultasiController::class, 'bayar'])->whereNumber('id')->name('konsultasi.bayar');
+    Route::get('/konsultasi/{id}/bukti', [KonsultasiController::class, 'bukti'])->whereNumber('id')->name('konsultasi.bukti');
+    Route::post('/konsultasi/{id}/pembayaran/konfirmasi', [KonsultasiController::class, 'konfirmasiPembayaran'])->whereNumber('id')->name('pembayaran.konfirmasi');
 });
