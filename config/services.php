@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'mentalcare' => [
+        'api_url'     => env('API_URL', 'http://localhost:8000/api'),
+        'backend_url' => env('BACKEND_URL', 'http://localhost:8000'),
+    ],
+
 ];
