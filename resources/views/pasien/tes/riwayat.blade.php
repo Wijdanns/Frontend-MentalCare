@@ -3,8 +3,7 @@
 @section('title', 'Riwayat Tes | MentalCare')
 
 @section('content')
-{{-- Data dari API: GET /api/tes-psikologi/riwayat?page= --}}
-<section x-data="tesRiwayat" class="mx-auto max-w-3xl px-5 py-12 sm:px-8 lg:py-16">
+<section class="mx-auto max-w-3xl px-5 py-12 sm:px-8 lg:py-16">
 
     <a href="{{ route('tes.index') }}" class="text-sm font-medium text-gray-500 hover:text-primary">&larr; Semua tes</a>
 
@@ -12,41 +11,46 @@
     <p class="mt-2 text-gray-600">Semua tes yang pernah kamu kerjakan.</p>
 
     <div class="mt-8 space-y-3">
+        @forelse ($riwayat ?? [] as $item)
+            @php
+                $itemId = data_get($item, 'id');
+                $namaTes = data_get($item, 'tesPsikologis.nama_tes')
+                    ?? data_get($item, 'tes_psikologis.nama_tes')
+                    ?? data_get($item, 'tes.nama_tes', 'Tes Psikologi');
+                $createdAt = data_get($item, 'created_at');
+                $totalPoin = data_get($item, 'total_poin', 0);
+            @endphp
 
-        <div x-show="memuat" class="space-y-3">
-            <div class="h-20 animate-pulse rounded-2xl bg-blush-100"></div>
-            <div class="h-20 animate-pulse rounded-2xl bg-blush-100"></div>
-        </div>
-
-        <div x-show="galat" x-cloak class="rounded-2xl border border-red-200 bg-red-50 p-6 text-center">
-            <p class="text-sm text-red-700" x-text="galat"></p>
-            <button type="button" @click="muat()" class="mt-3 text-sm font-semibold text-primary hover:underline">Coba lagi</button>
-        </div>
-
-        <template x-for="item in items" :key="item.id">
-            <a :href="item.link"
+            <a href="{{ $itemId ? route('tes.hasil', $itemId) : '#' }}"
                class="flex items-center justify-between gap-4 rounded-2xl border border-blush-200 bg-white p-5 transition hover:border-primary hover:shadow-lg">
                 <div class="min-w-0">
-                    <p class="truncate font-semibold text-ink" x-text="item.nama"></p>
-                    <p class="mt-1 text-xs text-gray-500" x-text="item.waktu"></p>
+                    <p class="truncate font-semibold text-ink">{{ $namaTes }}</p>
+                    <p class="mt-1 text-xs text-gray-500">
+                        {{ $createdAt ? \Illuminate\Support\Carbon::parse($createdAt)->translatedFormat('d F Y, H:i') : '-' }}
+                    </p>
                 </div>
                 <div class="flex shrink-0 items-center gap-3">
-                    <span class="rounded-full bg-blush-100 px-3 py-1 text-sm font-bold text-primary" x-text="item.poin + ' poin'"></span>
+                    <span class="rounded-full bg-blush-100 px-3 py-1 text-sm font-bold text-primary">
+                        {{ $totalPoin }} poin
+                    </span>
                     <svg class="h-4 w-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
                 </div>
             </a>
-        </template>
-
-        <div x-show="!memuat && !galat && items.length === 0" x-cloak
-             class="rounded-2xl border border-dashed border-blush-200 bg-white p-10 text-center">
-            <p class="text-gray-500">Kamu belum pernah mengerjakan tes.</p>
-            <a href="{{ route('tes.index') }}"
-               class="mt-4 inline-block rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-dark">
-                Mulai tes pertamamu
-            </a>
-        </div>
+        @empty
+            <div class="rounded-2xl border border-dashed border-blush-200 bg-white p-10 text-center">
+                <p class="text-gray-500">Kamu belum pernah mengerjakan tes.</p>
+                <a href="{{ route('tes.index') }}"
+                   class="mt-4 inline-block rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-dark">
+                    Mulai tes pertamamu
+                </a>
+            </div>
+        @endforelse
     </div>
 
-    <x-paginasi-api />
+    @if (isset($riwayat) && method_exists($riwayat, 'links'))
+        <div class="mt-6">
+            {{ $riwayat->links() }}
+        </div>
+    @endif
 </section>
 @endsection
