@@ -2,51 +2,38 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Support\Facades\Auth;
+use App\Services\ApiService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\View\View;
 
 class ProfilController extends Controller
 {
-    public function index()
+    public function index(): View
     {
-        /** @var \App\Models\User $user */
-        $user = Auth::user();
+        $res = ApiService::get('/profil');
+        abort_unless($res->ok, $res->status);
 
-        $riwayatKonsultasi = $user->konsultasi()
-            ->with(['psikolog', 'jadwal', 'pembayaran'])
-            ->latest()
-            ->get();
-
-        $riwayatTes = $user->hasilTes()
-            ->with('tesPsikologis')
-            ->latest()
-            ->get();
+        $user              = $res->data->user;
+        $riwayatKonsultasi = collect($res->data->riwayat_konsultasi);
+        $riwayatTes        = collect($res->data->riwayat_tes);
 
         return view('profil.index', compact('user', 'riwayatKonsultasi', 'riwayatTes'));
     }
 
-    public function update(Request $request)
+    public function update(Request $request): RedirectResponse
     {
-        /** @var \App\Models\User $user */
-        $user = Auth::user();
+        $files = $request->hasFile('profil') ? ['profil' => $request->file('profil')] : [];
 
-        $request->validate([
-            'nama'   => 'required|string|max:255',
-            'profil' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
-        ]);
+        // Di API, update profil memakai POST agar bisa upload file (multipart)
+        $res = ApiService::post('/profil', ['nama' => $request->input('nama')], $files);
 
-        $data = ['nama' => $request->nama];
-
-        if ($request->hasFile('profil')) {
-            if ($user->profil) {
-                Storage::disk('public')->delete($user->profil);
-            }
-            $data['profil'] = $request->file('profil')->store('profil', 'public');
+        if (! $res->ok) {
+            return back()->withErrors(ApiService::errors($res))->withInput();
         }
 
-        $user->update($data);
+        session(['user' => $res->data]); // segarkan nama/foto di navbar
 
-        return back()->with('success', 'Profil berhasil diperbarui!');
+        return back()->with('success', $res->message);
     }
 }
