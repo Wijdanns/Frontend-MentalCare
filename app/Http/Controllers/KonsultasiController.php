@@ -2,159 +2,105 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\JadwalPsikolog;
-use App\Models\Konsultasi;
-use App\Models\Pembayaran;
-use App\Models\Psikolog;
+use App\Services\ApiService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
-use App\Exports\KonsultasiExport;
-use Maatwebsite\Excel\Facades\Excel;
+use Illuminate\View\View;
 
 class KonsultasiController extends Controller
 {
-    public function index()
+    public function index(): View|RedirectResponse
     {
-        Konsultasi::batalkanYangKedaluwarsa();
+        // Endpoint API ini butuh login pasien, jadi tamu diarahkan ke halaman login
+        if (! session()->has('api_token')) {
+            session(['url.intended' => route('konsultasi.index')]);
 
-        $psikologs = Psikolog::query()
-            ->with(['jadwalTersedia' => function ($q) {
-                $q->orderBy('tanggal')->orderBy('jam_mulai');
-            }])
-            ->get()
-            ->each(function ($p) { 
-                $p->tersedia = $p->jadwalTersedia->isNotEmpty();
-            });
+            return redirect()->route('login')->with('error', 'Silakan masuk untuk membuat jadwal konsultasi.');
+        }
+
+        $res = ApiService::get('/konsultasi');
+        abort_unless($res->ok, $res->status);
+
+        $psikologs = collect($res->data); // tiap item punya ->jadwal_tersedia[] dan ->tersedia
 
         return view('konsultasi.index', compact('psikologs'));
     }
 
-    public function store(Request $request)
+    public function store(Request $request): RedirectResponse
     {
-        $data = $request->validate([
-            'id_psikolog'       => ['required', 'exists:psikolog,id'],
-            'id_jadwal'         => ['required', 'exists:jadwal_psikolog,id'],
-            'metode_pembayaran' => ['required', 'in:Transfer Bank,E-Wallet'],
-        ], [
-            'id_psikolog.required'      => 'Pilih psikolog terlebih dahulu.',
-            'id_psikolog.exists'        => 'Psikolog yang dipilih tidak valid.',
-            'id_jadwal.required'        => 'Pilih jadwal konsultasi terlebih dahulu.',
-            'id_jadwal.exists'          => 'Jadwal yang dipilih tidak valid.',
-            'metode_pembayaran.required' => 'Pilih metode pembayaran terlebih dahulu.',
-            'metode_pembayaran.in'      => 'Metode pembayaran tidak valid.',
-        ]);
+        $res = ApiService::post('/konsultasi', $request->only('id_psikolog', 'id_jadwal', 'metode_pembayaran'));
 
-        $psikolog = Psikolog::findOrFail($data['id_psikolog']);
+        if (! $res->ok) {
+            return back()
+                ->withErrors(ApiService::errors($res))
+                ->with('error', $res->message)
+                ->withInput();
+        }
 
-        $konsultasi = DB::transaction(function () use ($data, $psikolog) {
-            $jadwal = JadwalPsikolog::where('id', $data['id_jadwal'])
-                ->where('id_psikolog', $psikolog->id)
-                ->where('status', 'Tersedia')
-                ->lockForUpdate()
-                ->firstOrFail();
+        toast($res->message, 'success');
 
-            $konsultasi = Konsultasi::create([
-                'id_user'           => Auth::id(),
-                'id_psikolog'       => $psikolog->id,
-                'id_jadwal'         => $jadwal->id,
-                'status_konsultasi' => 'Menunggu Pembayaran',
-                'total_biaya'       => $psikolog->biaya,
-            ]);
-
-            $konsultasi->pembayaran()->update([
-                'metode_pembayaran' => $data['metode_pembayaran'],
-            ]);
-
-            return $konsultasi;
-        });
-
-        toast('Pemesanan berhasil! Silakan selesaikan pembayaran agar sesi konselingmu bisa segera dikonfirmasi.', 'success');
-
-        return redirect()
-            ->route('konsultasi.konfirmasi', $konsultasi)
-            ->with('success', 'Konsultasi berhasil dibuat. Lanjutkan pembayaran.');
+        return redirect()->route('konsultasi.konfirmasi', $res->data->id);
     }
 
-    public function konfirmasi(Konsultasi $konsultasi)
+    public function konfirmasi(int $id): View|RedirectResponse
     {
-        abort_unless($konsultasi->id_user === Auth::id(), 403);
+        $res = ApiService::get("/konsultasi/{$id}");
 
-        $konsultasi->load(['psikolog', 'jadwal', 'pembayaran']);
-
-        if ($konsultasi->sudahKedaluwarsa()) {
-            Konsultasi::batalkanYangKedaluwarsa();
-
-            return redirect()
-                ->route('konsultasi.riwayat')
-                ->with('error', 'Batas waktu pembayaran (1 jam) telah habis. Pesanan dibatalkan otomatis.');
+        if ($res->status === 400) { // batas waktu pembayaran habis
+            return redirect()->route('konsultasi.riwayat')->with('error', $res->message);
         }
+        abort_unless($res->ok, $res->status);
+
+        $konsultasi = $res->data;
 
         return view('konsultasi.konfirmasi', compact('konsultasi'));
     }
 
-    public function bayar(Request $request, Konsultasi $konsultasi)
+    public function bayar(Request $request, int $id): RedirectResponse
     {
-        abort_unless($konsultasi->id_user === Auth::id(), 403);
+        $files = $request->hasFile('bukti_pembayaran')
+            ? ['bukti_pembayaran' => $request->file('bukti_pembayaran')]
+            : [];
 
-        $konsultasi->load('pembayaran');
+        $res = ApiService::post("/konsultasi/{$id}/bayar", [], $files);
 
-        if ($konsultasi->sudahKedaluwarsa()) {
-            Konsultasi::batalkanYangKedaluwarsa();
-
-            return redirect()
-                ->route('konsultasi.riwayat')
-                ->with('error', 'Batas waktu pembayaran (1 jam) telah habis. Silakan buat jadwal ulang.');
-        }
-
-        $request->validate([
-            'bukti_pembayaran' => ['required', 'file', 'mimes:jpeg,png,jpg,pdf', 'max:2048'],
-        ], [
-            'bukti_pembayaran.required' => 'Silakan unggah bukti pembayaran terlebih dahulu.',
-            'bukti_pembayaran.mimes'    => 'Format file harus berupa JPG, PNG, atau PDF.',
-            'bukti_pembayaran.max'      => 'Ukuran file bukti pembayaran maksimal 2MB.',
-        ]);
-
-        if ($request->hasFile('bukti_pembayaran')) {
-            $file = $request->file('bukti_pembayaran');
-            $filename = time() . '_' . $konsultasi->id . '.' . $file->getClientOriginalExtension();
-            $path = $file->storeAs('bukti_pembayaran', $filename, 'public');
-
-            $pembayaran = $konsultasi->pembayaran;
-            if ($pembayaran->bukti_pembayaran && Storage::disk('public')->exists($pembayaran->bukti_pembayaran)) {
-                Storage::disk('public')->delete($pembayaran->bukti_pembayaran);
+        if (! $res->ok) {
+            if ($res->status === 400) {
+                return redirect()->route('konsultasi.riwayat')->with('error', $res->message);
             }
 
-            $pembayaran->update([
-                'bukti_pembayaran'  => $path,
-                'status_pembayaran' => 'Pending',
-                'waktu_pembayaran'  => now(),
-            ]);
+            return back()->withErrors(ApiService::errors($res))->with('error', $res->message);
         }
+
+        return redirect()->route('konsultasi.riwayat')->with('success', $res->message);
+    }
+
+    public function konfirmasiPembayaran(int $id): RedirectResponse
+    {
+        $res = ApiService::post("/konsultasi/{$id}/pembayaran/konfirmasi");
 
         return redirect()
             ->route('konsultasi.riwayat')
-            ->with('success', 'Bukti pembayaran berhasil diunggah! Mohon tunggu verifikasi dari admin.');
+            ->with($res->ok ? 'success' : 'error', $res->message);
     }
 
-    public function riwayat()
+    public function riwayat(): View
     {
-        Konsultasi::batalkanYangKedaluwarsa();
+        $res = ApiService::get('/konsultasi/riwayat');
+        abort_unless($res->ok, $res->status);
 
-        $konsultasi = Konsultasi::with(['psikolog', 'jadwal', 'pembayaran'])
-            ->where('id_user', Auth::id())
-            ->orderByDesc('created_at')
-            ->get();
+        $konsultasi = collect($res->data);
 
         return view('konsultasi.riwayat', compact('konsultasi'));
     }
 
-    public function exportExcel()
+    /** Bukti pembayaran di backend butuh token, jadi diteruskan (proxy) lewat frontend. */
+    public function bukti(int $id)
     {
-        return Excel::download(
-            new KonsultasiExport,
-            'laporan-konsultasi-' . now()->format('Ymd') . '.xlsx'
-        );
+        $res = ApiService::client()->get("/konsultasi/{$id}/bukti");
+        abort_unless($res->successful(), 404);
+
+        return response($res->body(), 200)
+            ->header('Content-Type', $res->header('Content-Type'));
     }
 }
