@@ -2,33 +2,34 @@
 
 namespace App\Providers;
 
-use Illuminate\Support\ServiceProvider;
-use App\Models\Psikolog;
+use App\Services\ApiService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\View;
+use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
         //
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
-        View::composer('pasien.dashboard', function ($view) {
-        $view->with(
-            'psikologs',
-            Psikolog::query()
-                ->withCount(['jadwalTersedia as jadwal_tersedia_count'])
-                ->take(3)
-                ->get()
-        );
-    });
+        // $authUser tersedia di SEMUA view (pengganti auth()->user()); null jika belum login
+        View::composer('*', function ($view) {
+            $view->with('authUser', session('user'));
+        });
+
+        // Daftar kategori untuk dropdown navbar (di-cache 10 menit)
+        View::composer('partials.navbar', function ($view) {
+            $kategori = Cache::remember('kategori_artikel', 600, function () {
+                $res = ApiService::get('/artikel-kategori');
+
+                return $res->ok ? $res->data : [];
+            });
+
+            $view->with('kategoriArtikel', collect($kategori));
+        });
     }
 }
