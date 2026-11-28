@@ -6,9 +6,14 @@
   <!-- Card Registrasi -->
   <div class="bg-white p-8 rounded-2xl shadow-sm w-full max-w-sm relative">
 
-    <!-- Icon Hati -->
-    <div class="w-10 h-10 bg-pink-100 text-pink-600 rounded-full flex items-center justify-center text-lg mb-5">
-      ♥
+    <!-- Header Card: Icon Hati & Kembali ke Beranda Sejajar -->
+    <div class="flex items-center justify-between mb-5">
+      <div class="w-10 h-10 bg-pink-100 text-pink-600 rounded-full flex items-center justify-center text-lg">
+        ♥
+      </div>
+      <a href="{{ route('home') }}" class="text-xs text-gray-400 hover:text-rose-600 transition">
+        &larr; Kembali ke beranda
+      </a>
     </div>
 
     <!-- Judul & Subjudul -->
@@ -72,10 +77,6 @@
     <!-- Footer -->
     <p class="text-center text-xs text-gray-500 mt-6">
       Sudah punya akun? <a href="{{ route('login') }}" class="text-rose-600 font-semibold hover:underline">Masuk</a>
-    </p>
-
-    <p class="text-center text-xs text-gray-400 mt-3">
-      <a href="{{ route('home') }}" class="hover:text-rose-600">&larr; Kembali ke beranda</a>
     </p>
   </div>
 
