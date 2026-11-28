@@ -4,21 +4,31 @@
 
 @section('content')
 @php
-    $psikologs = $psikologs ?? collect();
+    $isLoggedIn = session()->has('api_token');
+    $user       = session('user');
+    $namaUser   = data_get($user, 'nama', 'User');
+    $emailUser  = data_get($user, 'email', '');
+
+    $psikologs = collect($psikologs ?? []);
 
     $daftarPsikolog = $psikologs->map(fn ($p) => [
-        'id'    => (string) $p->id,
-        'nama'  => $p->nama,
-        'biaya' => (int) $p->biaya, // Disamakan dengan $psikolog->biaya di Controller
+        'id'       => (string) data_get($p, 'id', ''),
+        'nama'     => data_get($p, 'nama', 'Psikolog'),
+        'biaya'    => (int) (data_get($p, 'biaya') ?? data_get($p, 'tarif', 0)),
+        'tersedia' => (bool) data_get($p, 'tersedia', false),
     ])->values();
 
     $daftarJadwal = $psikologs->mapWithKeys(function ($p) {
+        $jadwalList = collect(
+            data_get($p, 'jadwalTersedia') ?? data_get($p, 'jadwal_tersedia', [])
+        );
+
         return [
-            (string) $p->id => $p->jadwalTersedia->map(fn ($j) => [
-                'id'          => $j->id,
-                'tanggal'     => $j->tanggal,
-                'jam_mulai'   => $j->jam_mulai,
-                'jam_selesai' => $j->jam_selesai,
+            (string) data_get($p, 'id', '') => $jadwalList->map(fn ($j) => [
+                'id'          => (string) data_get($j, 'id', ''),
+                'tanggal'     => data_get($j, 'tanggal', ''),
+                'jam_mulai'   => data_get($j, 'jam_mulai', ''),
+                'jam_selesai' => data_get($j, 'jam_selesai', ''),
             ])->values(),
         ];
     });
@@ -35,7 +45,7 @@
     jadwal: @js($daftarJadwal),
     formData: {
       psikolog: @js((string) request('psikolog')),
-      id_jadwal: '',
+      id_jadwal: @js((string) request('jadwal')),
       tanggal: @js($hariIni),
       jam_mulai: '',
       jam_selesai: '',
@@ -48,8 +58,20 @@
     ],
 
     init() {
+      if (this.formData.id_jadwal && !this.formData.psikolog) {
+        for (const [pId, list] of Object.entries(this.jadwal)) {
+          if (list.some(j => String(j.id) === String(this.formData.id_jadwal))) {
+            this.formData.psikolog = pId;
+            break;
+          }
+        }
+      }
+
       if (! this.psikologs.some(p => p.id === this.formData.psikolog)) {
         this.formData.psikolog = '';
+        this.formData.id_jadwal = '';
+      } else if (this.formData.id_jadwal) {
+        this.pilihSesi(this.formData.id_jadwal);
       }
     },
 
@@ -95,6 +117,7 @@
     pilihSesi(id) {
       const j = this.jadwalTerpilih.find(x => String(x.id) === String(id));
       if (! j) {
+        this.formData.id_jadwal = '';
         this.formData.jam_mulai = '';
         this.formData.jam_selesai = '';
         return;
@@ -127,9 +150,9 @@
         const res = await fetch('{{ route('konsultasi.store') }}', {
           method: 'POST',
           headers: {
-            'Content-Type':  'application/json',
-            'Accept':        'application/json',
-            'X-CSRF-TOKEN':  '{{ csrf_token() }}',
+            'Content-Type': 'application/json',
+            'Accept':       'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
           },
           body: JSON.stringify({
             id_psikolog:       this.formData.psikolog,
@@ -138,18 +161,28 @@
           }),
         });
 
-        const json = await res.json();
+        // Jika KonsultasiController@store mengembalikan RedirectResponse (302 -> 200 HTML)
+        if (res.redirected) {
+          window.location.href = res.url;
+          return;
+        }
 
-        if (res.ok && json.success) {
-          // Redirect sesuai respons JSON dari KonsultasiController@store
-          window.location.href = json.redirect;
-        } else if (res.status === 422) {
-          this.errors = json.errors || {};
-          this.showModal = false;
-          this.step = (this.errors.id_psikolog || this.errors.id_jadwal) ? 1 : 2;
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const json = await res.json();
+          if (res.ok && json.success) {
+            window.location.href = json.redirect;
+          } else if (res.status === 422) {
+            this.errors = json.errors || {};
+            this.showModal = false;
+            this.step = (this.errors.id_psikolog || this.errors.id_jadwal) ? 1 : 2;
+          } else {
+            this.showModal = false;
+            this.errors = { umum: [json.message || 'Gagal menyimpan konsultasi.'] };
+          }
         } else {
           this.showModal = false;
-          this.errors = { umum: [json.message || 'Gagal menyimpan konsultasi.'] };
+          this.errors = { umum: ['Gagal memproses pesanan. Periksa kembali isianmu.'] };
         }
       } catch (e) {
         this.showModal = false;
@@ -190,12 +223,12 @@
         </template>
       </div>
 
-      @guest
+      @if (! $isLoggedIn)
         <div class="rounded-xl border border-rose-100 bg-rose-50/50 p-4 text-xs text-rose-700 leading-relaxed">
           Kamu akan diminta login terlebih dahulu sebelum menyelesaikan pemesanan.
           <a href="{{ route('login') }}" class="font-semibold underline">Masuk di sini</a>.
         </div>
-      @endguest
+      @endif
     </div>
 
     <!-- RIGHT FORM CARD -->
@@ -222,9 +255,9 @@
                   :class="err('id_psikolog') ? 'border-red-400' : 'border-gray-200'"
                   class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-rose-500 bg-white">
             <option value="">Pilih psikolog</option>
-            @foreach ($psikologs as $psikolog)
-              <option value="{{ $psikolog->id }}" {{ $psikolog->tersedia ? '' : 'disabled' }}>
-                {{ $psikolog->nama }} - Rp {{ number_format($psikolog->biaya, 0, ',', '.') }}{{ $psikolog->tersedia ? '' : ' (belum tersedia)' }}
+            @foreach ($daftarPsikolog as $psikolog)
+              <option value="{{ $psikolog['id'] }}" {{ $psikolog['tersedia'] ? '' : 'disabled' }}>
+                {{ $psikolog['nama'] }} - Rp {{ number_format($psikolog['biaya'], 0, ',', '.') }}{{ $psikolog['tersedia'] ? '' : ' (belum tersedia)' }}
               </option>
             @endforeach
           </select>
@@ -253,10 +286,10 @@
         </div>
 
         <button @click="
-            @guest
-                window.location.href = '{{ route('konsultasi.go-login') }}';
+            @if (! $isLoggedIn)
+                window.location.href = '{{ route('login') }}';
                 return;
-            @endguest
+            @endif
 
             lanjutKeStep2()"
             class="w-full bg-rose-600 hover:bg-rose-700 text-white font-semibold py-2.5 rounded-lg text-sm flex items-center justify-center gap-2 transition mt-4">
@@ -275,18 +308,18 @@
         </div>
 
         <!-- Ringkasan Data Akun & Biaya -->
-        @auth
+        @if ($isLoggedIn)
         <div class="bg-pink-50/40 rounded-xl p-4 text-xs space-y-2 border border-pink-100">
           <div class="flex justify-between">
             <span class="text-gray-500">Pemesan</span>
-            <span class="font-semibold text-gray-800">{{ Auth::user()->name }} ({{ Auth::user()->email }})</span>
+            <span class="font-semibold text-gray-800">{{ $namaUser }} ({{ $emailUser }})</span>
           </div>
           <div class="flex justify-between">
             <span class="text-gray-500">Total Biaya Konsultasi</span>
             <span class="font-bold text-rose-600" x-text="rupiah(psikologTerpilih ? psikologTerpilih.biaya : 0)"></span>
           </div>
         </div>
-        @endauth
+        @endif
 
         <div>
           <label class="block text-xs font-bold text-gray-800 mb-1">Metode pembayaran</label>
@@ -323,12 +356,12 @@
       <p class="text-xs text-gray-500">Periksa rincian pesanan sebelum berlanjut ke halaman pembayaran:</p>
 
       <div class="bg-pink-50/50 rounded-xl p-4 text-xs space-y-2.5 border border-pink-100">
-        @auth
+        @if ($isLoggedIn)
         <div class="flex justify-between border-b border-pink-100/60 pb-1.5">
           <span class="text-gray-500">Nama Pemesan</span>
-          <span class="font-semibold text-gray-800">{{ Auth::user()->name }}</span>
+          <span class="font-semibold text-gray-800">{{ $namaUser }}</span>
         </div>
-        @endauth
+        @endif
         <div class="flex justify-between border-b border-pink-100/60 pb-1.5">
           <span class="text-gray-500">Psikolog</span>
           <span class="font-semibold text-gray-800" x-text="psikologTerpilih ? psikologTerpilih.nama : '-'"></span>
